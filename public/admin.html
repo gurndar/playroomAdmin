@@ -11,10 +11,12 @@
 <body>
   <section id="login-view" class="container login" hidden>
     <div class="card">
-      <h2>🎮 Playroom 관리자 로그인</h2>
+      <h2 id="login-title">🎮 Playroom 관리자 로그인</h2>
       <form id="login-form">
+        <p class="muted" id="setup-help" hidden style="margin:0">처음 접속하셨네요. 앞으로 사용할 관리자 비밀번호를 정해 주세요. (6자 이상)</p>
         <input id="password" type="password" placeholder="관리자 비밀번호" autocomplete="current-password" required>
-        <button class="primary" type="submit">로그인</button>
+        <input id="password-confirm" type="password" placeholder="비밀번호 확인" autocomplete="new-password" hidden>
+        <button class="primary" type="submit" id="login-submit">로그인</button>
         <p class="muted" id="login-error" role="alert"></p>
       </form>
     </div>

@@ -86,8 +86,14 @@ export function createNotifier({ onPermissionChange = () => {} } = {}) {
     } catch { /* constructor unsupported (mobile without service worker) */ }
   }
 
+  const keyOf = (entry) => `${entry.id}:${entry.endAt}`;
+
+  function hasAlerted(entry) {
+    return notified.has(keyOf(entry));
+  }
+
   function expired(entry) {
-    const key = `${entry.id}:${entry.endAt}`;
+    const key = keyOf(entry);
     if (notified.has(key)) return;
     notified.add(key);
     persist();
@@ -118,5 +124,5 @@ export function createNotifier({ onPermissionChange = () => {} } = {}) {
     beep();
   }
 
-  return { status, request, unlockSound, expired, setTitleAlert, test };
+  return { status, request, unlockSound, hasAlerted, expired, setTitleAlert, test };
 }

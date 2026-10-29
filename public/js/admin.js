@@ -1,6 +1,6 @@
 import {
   api, syncClock, serverNow, remainingOf, liveStatus, formatDuration, formatClock,
-  subscribe, el, toast, STATUS_LABEL, TYPE_LABEL,
+  poll, el, toast, STATUS_LABEL, TYPE_LABEL,
 } from './common.js';
 import { createNotifier } from './notify.js';
 
@@ -20,11 +20,20 @@ const notifier = createNotifier({
 
 // ---------- auth ----------
 
+let needsSetup = false;
+
 async function boot() {
-  const { admin } = await api('GET', '/api/me');
-  $('login-view').hidden = admin;
-  $('app-view').hidden = !admin;
-  if (admin) {
+  const me = await api('GET', '/api/me');
+  needsSetup = me.needsSetup;
+  $('login-view').hidden = me.admin;
+  $('app-view').hidden = !me.admin;
+  $('login-title').textContent = needsSetup ? '🎮 관리자 비밀번호 설정' : '🎮 Playroom 관리자 로그인';
+  $('setup-help').hidden = !needsSetup;
+  $('password-confirm').hidden = !needsSetup;
+  $('password-confirm').required = needsSetup;
+  $('password').autocomplete = needsSetup ? 'new-password' : 'current-password';
+  $('login-submit').textContent = needsSetup ? '설정하고 시작하기' : '로그인';
+  if (me.admin) {
     await refresh();
     renderNotice();
   } else {
@@ -34,9 +43,15 @@ async function boot() {
 
 $('login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const password = $('password').value;
+  if (needsSetup && password !== $('password-confirm').value) {
+    $('login-error').textContent = '비밀번호 확인이 일치하지 않습니다.';
+    return;
+  }
   try {
-    await api('POST', '/api/login', { password: $('password').value });
+    await api('POST', needsSetup ? '/api/setup' : '/api/login', { password });
     $('password').value = '';
+    $('password-confirm').value = '';
     $('login-error').textContent = '';
     notifier.unlockSound();
     await boot();
@@ -53,9 +68,18 @@ $('logout').addEventListener('click', async () => {
 
 // ---------- data ----------
 
-async function refresh() {
+let lastFetch = 0;
+let inflight = null;
+
+function refresh() {
+  inflight ??= load().finally(() => (inflight = null));
+  return inflight;
+}
+
+async function load() {
   try {
     const next = await api('GET', '/api/state');
+    lastFetch = Date.now();
     syncClock(next.now);
     state = next;
     if (historyDate && historyDate !== state.today) {
@@ -273,7 +297,11 @@ function tick() {
     }
     const row = document.querySelector(`.student[data-entry="${entry.id}"]`);
     if (row && !row.classList.contains(status)) statusChanged = true;
-    if (status === 'expired') notifier.expired(entry);
+    if (status === 'expired' && !notifier.hasAlerted(entry)) {
+      // Another device may have added time since our last fetch; confirm before alarming.
+      if (Date.now() - lastFetch > 10_000) refresh();
+      else notifier.expired(entry);
+    }
   }
   const expiredCount = activeEntries().filter((e) => liveStatus(e) === 'expired').length;
   notifier.setTitleAlert(expiredCount);
@@ -390,8 +418,5 @@ $('entry-delete').addEventListener('click', async () => {
 
 setInterval(tick, 500);
 document.addEventListener('pointerdown', () => notifier.unlockSound());
-subscribe(() => state && refresh());
-// The date rolls over at midnight; also a safety net if the event stream drops silently.
-setInterval(() => state && refresh(), 60_000);
-document.addEventListener('visibilitychange', () => !document.hidden && state && refresh());
+poll(() => state && refresh(), 5_000);
 boot().catch((err) => toast(err.message, 'error'));

@@ -11,5 +11,8 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test"
+  },
+  "dependencies": {
+    "@netlify/blobs": "11.1.7"
   }
 }
