@@ -161,9 +161,27 @@ h2 { font-size: 16px; margin: 0 0 12px; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast.error { background: var(--danger); color: #fff; }
 
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+.button-link:hover { background: var(--surface-2); }
+.button-link.small { min-height: 34px; padding: 4px 10px; font-size: 14px; }
+
 /* ---------- student page ---------- */
 
-.hero { text-align: center; padding: 40px 0 20px; }
+.corner { display: flex; justify-content: flex-end; max-width: 520px; margin: 0 auto; padding: 16px 16px 0; }
+
+.hero { text-align: center; padding: 16px 0 20px; }
 .hero h1 { font-size: 26px; margin: 0 0 6px; }
 .search { display: flex; gap: 8px; }
 .search input { flex: 1; font-size: 18px; min-height: 52px; }
