@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Playroom 관리자</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <section id="login-view" class="container login" hidden>
+    <div class="card">
+      <h2>🎮 Playroom 관리자 로그인</h2>
+      <form id="login-form">
+        <input id="password" type="password" placeholder="관리자 비밀번호" autocomplete="current-password" required>
+        <button class="primary" type="submit">로그인</button>
+        <p class="muted" id="login-error" role="alert"></p>
+      </form>
+    </div>
+  </section>
+
+  <div id="app-view" hidden>
+    <header class="top">
+      <div class="container">
+        <h1>🎮 Playroom 관리자</h1>
+        <span class="clock" id="clock"></span>
+        <button id="logout" class="ghost small" type="button">로그아웃</button>
+      </div>
+    </header>
+
+    <main class="container stack">
+      <div class="notice" id="notify-notice" hidden>
+        <span id="notify-text"></span>
+        <button id="notify-enable" class="small" type="button">알림 켜기</button>
+      </div>
+
+      <section class="alerts" id="alerts" hidden aria-live="assertive">
+        <h2>⏰ 시간 종료 — 퇴실 처리해 주세요</h2>
+        <ul id="alert-list"></ul>
+      </section>
+
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="board" aria-selected="true">현황</button>
+        <button role="tab" data-tab="rooms" aria-selected="false">구역 관리</button>
+        <button role="tab" data-tab="history" aria-selected="false">기록</button>
+      </nav>
+
+      <section data-panel="board" class="stack">
+        <div class="toolbar">
+          <div class="segmented" id="filter">
+            <button type="button" data-filter="all" aria-pressed="true">전체</button>
+            <button type="button" data-filter="M" aria-pressed="false">남</button>
+            <button type="button" data-filter="F" aria-pressed="false">여</button>
+          </div>
+          <span class="summary" id="summary"></span>
+        </div>
+        <div class="rooms" id="rooms"></div>
+        <p class="card empty" id="no-rooms" hidden>아직 구역이 없습니다. <b>구역 관리</b> 탭에서 호수를 먼저 추가해 주세요.</p>
+      </section>
+
+      <section data-panel="rooms" class="card manage-rooms" hidden>
+        <h2>구역 추가</h2>
+        <form class="row" id="room-form">
+          <input id="room-name" placeholder="호수 (예: 301호)" maxlength="30" required>
+          <div class="segmented" id="room-type">
+            <button type="button" data-type="M" aria-pressed="true">남</button>
+            <button type="button" data-type="F" aria-pressed="false">여</button>
+          </div>
+          <button class="primary" type="submit">추가</button>
+        </form>
+        <h2 style="margin-top:20px">구역 목록</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>호수</th><th>타입</th><th>이용 중</th><th></th></tr></thead>
+            <tbody id="room-table"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section data-panel="history" class="card history" hidden>
+        <div class="toolbar" style="margin-bottom:12px">
+          <h2 style="margin:0">입장 기록</h2>
+          <select id="history-date" aria-label="날짜"></select>
+          <span class="summary" id="history-summary"></span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>이름</th><th>구역</th><th>입장</th><th>퇴실</th><th>상태</th><th>남은 시간</th><th></th></tr></thead>
+            <tbody id="history-table"></tbody>
+          </table>
+        </div>
+        <p class="muted" style="font-size:13px;margin-bottom:0">같은 날 한 번 입장한 학생은 다시 입장할 수 없습니다. 잘못 등록한 경우에만 기록을 삭제하세요.</p>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="entry-dialog">
+    <form method="dialog" id="entry-form">
+      <h2 id="entry-title"></h2>
+      <label class="stack" style="gap:6px">
+        <span class="muted">시간 조정 (분, 음수는 감소)</span>
+        <div class="row">
+          <input id="adjust-minutes" type="number" step="1" placeholder="예: 15 또는 -10">
+          <button type="button" id="adjust-apply">적용</button>
+        </div>
+      </label>
+      <label class="stack" style="gap:6px">
+        <span class="muted">구역 이동</span>
+        <div class="row">
+          <select id="move-room" style="flex:1"></select>
+          <button type="button" id="move-apply">이동</button>
+        </div>
+      </label>
+      <div class="row" style="justify-content:space-between">
+        <button type="button" class="danger" id="entry-delete">기록 삭제</button>
+        <button value="cancel">닫기</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="room-dialog">
+    <form method="dialog" id="room-edit-form">
+      <h2>구역 수정</h2>
+      <input id="room-edit-name" maxlength="30" required>
+      <div class="segmented" id="room-edit-type">
+        <button type="button" data-type="M" aria-pressed="true">남</button>
+        <button type="button" data-type="F" aria-pressed="false">여</button>
+      </div>
+      <div class="row">
+        <button value="cancel" formnovalidate>취소</button>
+        <button class="primary" value="save">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="/js/admin.js"></script>
+</body>
+</html>
