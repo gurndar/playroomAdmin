@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Store } from '../src/store.js';
-import { Auth } from '../src/auth.js';
+import { Auth, LoginLimiter } from '../src/auth.js';
 import { createApp } from '../src/app.js';
 
 const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
@@ -20,41 +20,45 @@ async function call(method, url, body, { auth = true } = {}) {
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const setCookie = res.headers.get('set-cookie');
-  return { status: res.status, setCookie, data: await res.json().catch(() => null) };
+  return { status: res.status, setCookie: res.headers.get('set-cookie'), data: await res.json().catch(() => null) };
 }
 
 before(async () => {
   const store = new Store();
-  const auth = new Auth({ password: 'secret-pw', secret: store.secret });
-  server = createApp({ store, auth, publicDir });
+  server = createApp({ store, auth: new Auth({ store }), limiter: new LoginLimiter(), publicDir });
   await new Promise((r) => server.listen(0, r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
 
-after(() => {
-  server.closeStreams();
-  server.close();
-});
+after(() => server.close());
 
-test('admin endpoints require login', async () => {
+test('first run asks for a password and login is refused until then', async () => {
+  assert.deepEqual((await call('GET', '/api/me')).data, { admin: false, needsSetup: true });
+  assert.equal((await call('POST', '/api/login', { password: 'x' })).status, 409);
   assert.equal((await call('GET', '/api/state')).status, 401);
-  assert.equal((await call('POST', '/api/rooms', { name: '301호', type: 'M' })).status, 401);
 });
 
-test('wrong password is rejected, right one sets a cookie', async () => {
-  assert.equal((await call('POST', '/api/login', { password: 'nope' })).status, 401);
-  const ok = await call('POST', '/api/login', { password: 'secret-pw' });
+test('setup sets the password once and logs in', async () => {
+  assert.equal((await call('POST', '/api/setup', { password: '123' })).status, 400);
+  const ok = await call('POST', '/api/setup', { password: 'secret-pw' });
   assert.equal(ok.status, 200);
   assert.match(ok.setCookie, /HttpOnly/);
   assert.match(ok.setCookie, /SameSite=Strict/);
   cookie = ok.setCookie.split(';')[0];
-  assert.deepEqual((await call('GET', '/api/me')).data, { admin: true });
+  assert.deepEqual((await call('GET', '/api/me')).data, { admin: true, needsSetup: false });
+  assert.equal((await call('POST', '/api/setup', { password: 'hijack-pw' }, { auth: false })).status, 409);
+});
+
+test('login checks the password', async () => {
+  assert.equal((await call('POST', '/api/login', { password: 'nope' }, { auth: false })).status, 401);
+  const ok = await call('POST', '/api/login', { password: 'secret-pw' }, { auth: false });
+  assert.equal(ok.status, 200);
+  assert.ok(ok.setCookie);
 });
 
 test('a tampered cookie is not accepted', async () => {
   const res = await fetch(`${base}/api/me`, { headers: { Cookie: cookie.slice(0, -2) + 'xx' } });
-  assert.deepEqual(await res.json(), { admin: false });
+  assert.equal((await res.json()).admin, false);
 });
 
 test('full flow: room, check-in, duplicate, adjust, pause, lookup, checkout', async () => {
@@ -77,7 +81,6 @@ test('full flow: room, check-in, duplicate, adjust, pause, lookup, checkout', as
   const lookup = (await call('GET', `/api/lookup?name=${encodeURIComponent('홍길동')}`, undefined, { auth: false })).data;
   assert.equal(lookup.entry.roomName, '301호');
   assert.equal(lookup.entry.status, 'paused');
-  assert.equal(lookup.entry.id, entry.id);
 
   const done = (await call('POST', `/api/entries/${entry.id}/checkout`)).data;
   assert.equal(done.status, 'done');

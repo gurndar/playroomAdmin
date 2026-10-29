@@ -57,12 +57,11 @@ export const STATUS_LABEL = {
 
 export const TYPE_LABEL = { M: '남', F: '여' };
 
-// Server-sent events: the server only says "something changed", the page refetches.
-export function subscribe(onChange) {
-  const source = new EventSource('/api/events');
-  source.addEventListener('change', onChange);
-  source.addEventListener('open', onChange); // catch up after a reconnect
-  return source;
+// Re-fetch every `ms` while the page is visible, and right away when it becomes visible again.
+// Countdowns run locally between fetches, so polling only has to catch admin changes.
+export function poll(fn, ms) {
+  setInterval(() => !document.hidden && fn(), ms);
+  document.addEventListener('visibilitychange', () => !document.hidden && fn());
 }
 
 export function el(tag, attrs = {}, ...children) {

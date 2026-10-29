@@ -1,4 +1,4 @@
-import { api, syncClock, remainingOf, liveStatus, formatDuration, formatClock, subscribe, el, STATUS_LABEL, TYPE_LABEL } from './common.js';
+import { api, syncClock, remainingOf, liveStatus, formatDuration, formatClock, poll, el, STATUS_LABEL, TYPE_LABEL } from './common.js';
 
 const form = document.getElementById('search-form');
 const input = document.getElementById('name');
@@ -70,7 +70,7 @@ setInterval(() => {
   else box.textContent = formatDuration(remainingOf(current.entry));
 }, 250);
 
-subscribe(() => current && lookup(current.query));
+poll(() => current && lookup(current.query), 15_000);
 
 const saved = readSaved();
 if (saved) {

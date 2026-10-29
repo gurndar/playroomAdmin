@@ -1,5 +1,3 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import crypto from 'node:crypto';
 
 export const ROOM_TYPES = { M: '남', F: '여' };
@@ -28,50 +26,57 @@ export function normalizeName(name) {
 
 const collator = new Intl.Collator('ko', { numeric: true });
 
-function emptyData() {
-  return { version: 1, secret: crypto.randomBytes(32).toString('hex'), rooms: [], entries: [] };
+const RETENTION_MS = 400 * 24 * 60 * 60 * 1000;
+
+export function emptyData() {
+  return { version: 1, secret: crypto.randomBytes(32).toString('hex'), admin: null, rooms: [], entries: [] };
 }
 
+// Pure state + rules. Persistence is the caller's job: pass the loaded `data`
+// in, and `onSave` (or checking `dirty`) gets the result out.
 export class Store {
-  constructor({ file = null, now = Date.now, timeZone = 'Asia/Seoul', durationMs = 90 * 60 * 1000 } = {}) {
-    this.file = file;
+  constructor({ data = null, onSave = null, now = Date.now, timeZone = 'Asia/Seoul', durationMs = 90 * 60 * 1000 } = {}) {
     this.now = now;
     this.timeZone = timeZone;
     this.durationMs = durationMs;
-    this.listeners = new Set();
-    this.data = this.#load();
-  }
-
-  #load() {
-    if (this.file && fs.existsSync(this.file)) {
-      const data = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-      return { ...emptyData(), ...data };
-    }
-    const data = emptyData();
-    this.#write(data);
-    return data;
-  }
-
-  #write(data) {
-    if (!this.file) return;
-    fs.mkdirSync(path.dirname(this.file), { recursive: true });
-    const tmp = `${this.file}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
-    fs.renameSync(tmp, this.file);
+    this.onSave = onSave;
+    this.dirty = !data;
+    this.data = data ? { ...emptyData(), ...data } : emptyData();
   }
 
   #commit() {
-    this.#write(this.data);
-    for (const fn of this.listeners) fn();
-  }
-
-  onChange(fn) {
-    this.listeners.add(fn);
-    return () => this.listeners.delete(fn);
+    this.dirty = true;
+    this.onSave?.(this.data);
   }
 
   get secret() {
     return this.data.secret;
+  }
+
+  // ---------- admin password (scrypt hash, set once from the web on first run) ----------
+
+  hasPassword() {
+    return Boolean(this.data.admin?.hash);
+  }
+
+  get passwordHash() {
+    return this.data.admin?.hash ?? null;
+  }
+
+  setPassword(password) {
+    const clean = String(password ?? '');
+    if (clean.length < 6) throw new StoreError(400, '비밀번호는 6자 이상으로 정해 주세요.');
+    if (clean.length > 100) throw new StoreError(400, '비밀번호가 너무 깁니다.');
+    const salt = crypto.randomBytes(16).toString('hex');
+    this.data.admin = { salt, hash: crypto.scryptSync(clean, salt, 32).toString('hex') };
+    this.#commit();
+  }
+
+  verifyPassword(password) {
+    if (!this.hasPassword()) return false;
+    const { salt, hash } = this.data.admin;
+    const given = crypto.scryptSync(String(password ?? ''), salt, 32);
+    return crypto.timingSafeEqual(given, Buffer.from(hash, 'hex'));
   }
 
   today() {
@@ -182,6 +187,7 @@ export class Store {
       remainingMs: null,
       checkOutAt: null,
     };
+    this.data.entries = this.data.entries.filter((e) => e.checkInAt > now - RETENTION_MS);
     this.data.entries.push(entry);
     this.#commit();
     return entry;
@@ -265,16 +271,6 @@ export class Store {
       endAt: entry.endAt,
       remainingMs: this.remainingMs(entry),
     };
-  }
-
-  // The soonest moment a running timer reaches zero, so the server can push an update right then.
-  nextExpiry() {
-    const now = this.now();
-    let next = null;
-    for (const e of this.#todayEntries()) {
-      if (e.state === 'running' && e.endAt > now && (next === null || e.endAt < next)) next = e.endAt;
-    }
-    return next;
   }
 
   snapshot(date = this.today()) {

@@ -1,8 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { Store, StoreError, dateKey } from '../src/store.js';
 
 const MIN = 60 * 1000;
@@ -138,27 +135,35 @@ test('lookup only finds today\'s entries and ignores spacing', () => {
   assert.equal(store.lookup('홍길동').entry, null);
 });
 
-test('nextExpiry returns the soonest running end time', () => {
-  const { clock, store, room } = setup();
-  assert.equal(store.nextExpiry(), null);
-  const a = store.checkIn({ name: 'A', roomId: room.id });
-  clock.t += 5 * MIN;
-  store.checkIn({ name: 'B', roomId: room.id });
-  assert.equal(store.nextExpiry(), a.endAt);
-  store.pause(a.id);
-  assert.equal(store.nextExpiry(), clock.t + 90 * MIN);
+test('password: unset at first, scrypt-verified once set', () => {
+  const { store } = setup();
+  assert.equal(store.hasPassword(), false);
+  assert.equal(store.verifyPassword('anything'), false);
+  assert.throws(() => store.setPassword('123'), { status: 400 });
+  store.setPassword('playroom!');
+  assert.equal(store.verifyPassword('playroom!'), true);
+  assert.equal(store.verifyPassword('wrong'), false);
+  assert.doesNotMatch(JSON.stringify(store.data), /playroom!/);
 });
 
-test('data persists to disk and reloads', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'playroom-'));
-  const file = path.join(dir, 'data.json');
+test('state round-trips through onSave and reload', () => {
+  let saved = null;
   const clock = { t: START };
-  const a = new Store({ file, now: () => clock.t });
+  const a = new Store({ now: () => clock.t, onSave: (data) => (saved = JSON.parse(JSON.stringify(data))) });
+  assert.equal(a.dirty, true); // fresh state must be written once so the secret sticks
   const room = a.addRoom({ name: '301호', type: 'M' });
   a.checkIn({ name: '홍길동', roomId: room.id });
-  const b = new Store({ file, now: () => clock.t });
+  const b = new Store({ data: saved, now: () => clock.t });
+  assert.equal(b.dirty, false);
   assert.equal(b.secret, a.secret);
   assert.equal(b.lookup('홍길동').entry.roomName, '301호');
   assert.throws(() => b.checkIn({ name: '홍길동', roomId: room.id }), { status: 409 });
-  fs.rmSync(dir, { recursive: true });
+});
+
+test('records older than about a year are pruned on check-in', () => {
+  const { clock, store, room } = setup();
+  store.checkIn({ name: 'old', roomId: room.id });
+  clock.t += 401 * 24 * 60 * MIN;
+  store.checkIn({ name: 'new', roomId: room.id });
+  assert.deepEqual(store.data.entries.map((e) => e.name), ['new']);
 });
